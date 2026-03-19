@@ -649,6 +649,40 @@ body {
   padding: 4px 0 2px;
 }
 
+.action-row {
+  display: flex;
+  gap: 6px;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.share-btn {
+  flex: 1;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: #6366f1;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.share-btn:hover { background: #4f46e5; }
+
+.share-copied {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #15803d;
+  background: #dcfce7;
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  margin-top: 6px;
+}
+
 /* SOURCE META BAR */
 .source-meta {
   display: flex;

@@ -3,6 +3,7 @@
 const $ = id => document.getElementById(id);
 
 let currentPostData = null;
+let lastAnalysis = null;
 let analysisEnabled = true;
 let port = null;
 
@@ -126,6 +127,7 @@ function bindEvents() {
 
   $('retryBtn').addEventListener('click', () => { if (currentPostData) startAnalysis(currentPostData); });
   $('analyzeAgain').addEventListener('click', () => { if (currentPostData) startAnalysis(currentPostData); });
+  $('shareBtn').addEventListener('click', shareAnalysis);
 
   bindCollapsibles();
 }
@@ -147,6 +149,7 @@ async function startAnalysis(postData) {
 
   try {
     const result = await callClaude(postData, settings);
+    lastAnalysis = result;
     renderResults(result, postData);
   } catch (err) {
     showError(err.message || 'Analysis failed. Please try again.');
@@ -377,6 +380,62 @@ function renderEmotionBars(emotions) {
     container.querySelectorAll('.emotion-bar-fill').forEach(bar => {
       bar.style.width = bar.getAttribute('data-width');
     });
+  });
+}
+
+function shareAnalysis() {
+  if (!lastAnalysis || !currentPostData) return;
+  const a = lastAnalysis;
+  const flags = (a.redFlags || []).map(f => `  🚩 ${f.type}: "${f.quote}" — ${f.explanation}`).join('\n');
+  const emotions = (a.emotions || []).map(e => `  ${e.label}: ${Math.round(e.score * 100)}%`).join('\n');
+  const intents = (a.intents || []).join(', ');
+
+  const lines = [
+    `📊 Facebook Post Analysis`,
+    `─────────────────────────`,
+    `👤 ${currentPostData.author || 'Unknown'}  •  ${new Date().toLocaleDateString()}`,
+    ``,
+    `📝 Summary`,
+    a.summary || '',
+    ``,
+    `💭 Subtext & Intent`,
+    a.subtext || '',
+    intents ? `Tags: ${intents}` : '',
+    flags ? `\n🚩 Red Flags\n${flags}` : '',
+    ``,
+    `❤️ Emotions`,
+    emotions,
+    ``,
+    `─────────────────────────`,
+    `Analyzed with Facebook Post Analyzer`
+  ].filter(l => l !== undefined).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+
+  // Try native share first, fall back to clipboard
+  if (navigator.share) {
+    navigator.share({ text: lines }).catch(() => copyToClipboard(lines));
+  } else {
+    copyToClipboard(lines);
+  }
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    const el = $('shareCopied');
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 2500);
+  }).catch(() => {
+    // Fallback: textarea trick
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    const el = $('shareCopied');
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 2500);
   });
 }
 

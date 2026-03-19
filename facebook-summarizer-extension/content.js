@@ -1,243 +1,181 @@
-// Content Analyzer AI - Content Script
-// Works on any website: Facebook, Instagram, LinkedIn, news, blogs, etc.
+// Facebook Post Analyzer - Content Script (Facebook only)
 
 (function () {
   'use strict';
 
-  let lastHighlighted = null;
-  let clickIndicator = null;
-  let analysisEnabled = true;
+  // Only run on Facebook
+  if (!location.hostname.includes('facebook.com')) return;
 
-  // ─── Skip tags that are never useful content ─────────────────────────────
-  const SKIP_TAGS = new Set([
-    'SCRIPT', 'STYLE', 'NOSCRIPT', 'HEAD', 'META', 'LINK',
-    'INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'OPTION',
-    'SVG', 'CANVAS', 'VIDEO', 'AUDIO', 'IFRAME'
-  ]);
+  const BTN_ID = 'fb-analyzer-btn';
+  let btn = null;
+  let activePost = null;
+  let hideTimer = null;
 
-  // ─── Semantic content containers (preferred) ─────────────────────────────
-  const CONTENT_SELECTORS = [
-    // Social media posts
-    '[role="article"]',
-    '[data-testid="post_message"]',
-    '[data-ad-comet-preview="message"]',
-    // News / blog
-    'article',
-    '[itemprop="articleBody"]',
-    '.article-body',
-    '.article__body',
-    '.post-content',
-    '.entry-content',
-    '.story-body',
-    '.content-body',
-    // LinkedIn
-    '.feed-shared-update-v2',
-    '.feed-shared-text',
-    // Instagram
-    '._aagv',
-    '._a9zs',
-    // Twitter/X
-    '[data-testid="tweetText"]',
-    '[data-testid="tweet"]',
-    // Generic fallbacks
-    'main',
-    '[role="main"]',
-    '.content',
-    '.post',
-    '.article',
-  ];
-
-  // ─── Find best content container from clicked element ────────────────────
-  function findContentBlock(target) {
-    let el = target;
-
-    // First pass: walk up looking for a known semantic container
-    let cur = el;
-    while (cur && cur !== document.body && cur !== document.documentElement) {
-      if (SKIP_TAGS.has(cur.tagName)) break;
-      if (cur.matches('nav, header, footer, aside, [role="navigation"], [role="banner"], [role="complementary"]')) return null;
-
-      for (const sel of CONTENT_SELECTORS) {
-        if (cur.matches && cur.matches(sel)) {
-          const t = extractText(cur);
-          if (t.length >= 60) return cur;
-        }
-      }
-      cur = cur.parentElement;
-    }
-
-    // Second pass: find the closest ancestor with enough readable text
-    // Start from the clicked element and walk up, return the FIRST (innermost) one with >= 100 chars
-    cur = el;
-    while (cur && cur !== document.body && cur !== document.documentElement) {
-      if (SKIP_TAGS.has(cur.tagName)) { cur = cur.parentElement; continue; }
-      if (cur.matches('nav, header, footer, aside, [role="navigation"], [role="banner"], [role="complementary"]')) return null;
-
-      const t = extractText(cur);
-      if (t.length >= 100) return cur;
-      cur = cur.parentElement;
-    }
-
-    return null;
-  }
-
-  // ─── Extract clean readable text from a container ────────────────────────
-  function extractText(container) {
-    const seen = new Set();
-    const parts = [];
-
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        const parent = node.parentElement;
-        if (!parent) return NodeFilter.FILTER_REJECT;
-        if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
-
-        const style = window.getComputedStyle(parent);
-        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
-          return NodeFilter.FILTER_REJECT;
-        }
-        // Skip buttons, nav, toolbars
-        if (parent.closest('button, nav, [role="navigation"], [role="toolbar"], [aria-label*="actions" i], [aria-label*="menu" i]')) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      }
+  // ─── Create the floating analyze button ──────────────────────────────────
+  function createBtn() {
+    const el = document.createElement('button');
+    el.id = BTN_ID;
+    el.innerHTML = '🔍 Analyze';
+    el.style.cssText = `
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 2147483640;
+      background: #6366f1;
+      color: white;
+      border: none;
+      border-radius: 20px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(99,102,241,0.5);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+      white-space: nowrap;
+      line-height: 1;
+    `;
+    el.addEventListener('mouseenter', () => {
+      clearTimeout(hideTimer);
     });
-
-    let node;
-    while ((node = walker.nextNode())) {
-      const t = node.textContent.trim();
-      if (t.length > 1 && !seen.has(t)) {
-        seen.add(t);
-        parts.push(t);
-      }
-    }
-
-    return parts.join(' ').replace(/\s+/g, ' ').trim();
+    el.addEventListener('mouseleave', () => {
+      scheduleHide();
+    });
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (activePost) triggerAnalysis(activePost, el);
+    });
+    document.body.appendChild(el);
+    return el;
   }
 
-  // ─── Extract metadata from container ─────────────────────────────────────
-  function extractMeta(container) {
-    // Author
-    let author = '';
-    const authorEl = container.querySelector(
-      'h1, h2, h3, ' +
-      '[class*="author" i], [class*="byline" i], [class*="username" i], ' +
-      '[itemprop="author"], [rel="author"], ' +
-      'a[role="link"] > span:first-child'
-    );
-    if (authorEl) author = authorEl.textContent.trim().substring(0, 80);
-
-    // Page title as fallback author context
-    const pageTitle = document.title || '';
-    const siteName = document.querySelector('meta[property="og:site_name"]')?.content || '';
-
-    // Images alt text
-    const images = [...container.querySelectorAll('img[alt]')]
-      .map(img => img.alt.trim())
-      .filter(a => a.length > 3)
-      .slice(0, 3);
-
-    return { author, pageTitle, siteName, images };
+  function getBtn() {
+    if (!btn || !document.body.contains(btn)) btn = createBtn();
+    return btn;
   }
 
-  // ─── Highlight selected block ─────────────────────────────────────────────
-  function highlightBlock(el) {
-    if (lastHighlighted) {
-      lastHighlighted.style.outline = '';
-      lastHighlighted.style.outlineOffset = '';
-      lastHighlighted.style.borderRadius = '';
-    }
-    if (el) {
-      el.style.outline = '2px solid #6366f1';
-      el.style.outlineOffset = '3px';
-      el.style.borderRadius = '4px';
-      lastHighlighted = el;
-    }
+  // ─── Show button over a post ──────────────────────────────────────────────
+  function showBtn(postEl) {
+    clearTimeout(hideTimer);
+    activePost = postEl;
+
+    // Position button inside the post using absolute inside fixed container
+    const rect = postEl.getBoundingClientRect();
+    const b = getBtn();
+
+    b.style.position = 'fixed';
+    b.style.top = (rect.top + 8) + 'px';
+    b.style.right = (window.innerWidth - rect.right + 8) + 'px';
+    b.style.left = 'auto';
+    b.style.opacity = '1';
+    b.style.pointerEvents = 'auto';
   }
 
-  // ─── Toast feedback ───────────────────────────────────────────────────────
-  function showToast(x, y, text) {
-    if (!clickIndicator) {
-      clickIndicator = document.createElement('div');
-      clickIndicator.id = 'content-analyzer-toast';
-      clickIndicator.style.cssText = `
-        position: fixed;
-        z-index: 2147483647;
-        pointer-events: none;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        background: rgba(99,102,241,0.93);
-        color: white;
-        padding: 7px 14px;
-        border-radius: 20px;
-        font-size: 13px;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-        transition: opacity 0.4s;
-        white-space: nowrap;
-      `;
-      document.body.appendChild(clickIndicator);
-    }
-    clickIndicator.innerHTML = `<span>🔍</span> ${text}`;
-    clickIndicator.style.left = Math.min(x + 12, window.innerWidth - 220) + 'px';
-    clickIndicator.style.top = Math.max(y - 44, 8) + 'px';
-    clickIndicator.style.opacity = '1';
-    clearTimeout(clickIndicator._timer);
-    clickIndicator._timer = setTimeout(() => {
-      if (clickIndicator) clickIndicator.style.opacity = '0';
-    }, 2200);
+  function scheduleHide() {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      const b = getBtn();
+      b.style.opacity = '0';
+      b.style.pointerEvents = 'none';
+      activePost = null;
+    }, 300);
   }
 
-  // ─── Click handler ────────────────────────────────────────────────────────
-  document.addEventListener('click', (e) => {
-    if (!analysisEnabled) return;
+  // ─── Attach hover listeners to a post ────────────────────────────────────
+  function attachPost(postEl) {
+    if (postEl._analyzerAttached) return;
+    postEl._analyzerAttached = true;
 
-    // Ignore clicks on interactive elements
-    if (e.target.matches('a, button, input, textarea, select, [role="button"]')) return;
+    postEl.addEventListener('mouseenter', () => showBtn(postEl));
+    postEl.addEventListener('mouseleave', () => scheduleHide());
+  }
 
-    const block = findContentBlock(e.target);
-    if (!block) return;
+  // ─── Observe Facebook feed for new posts ─────────────────────────────────
+  function scanPosts() {
+    // Facebook posts are role="article" inside the feed
+    document.querySelectorAll('[role="article"]').forEach(attachPost);
+  }
 
-    const text = extractText(block);
-    if (!text || text.length < 80) return;
+  const observer = new MutationObserver(() => scanPosts());
+  observer.observe(document.body, { childList: true, subtree: true });
+  scanPosts();
 
-    const meta = extractMeta(block);
+  // ─── Trigger analysis ────────────────────────────────────────────────────
+  function triggerAnalysis(postEl, btnEl) {
+    const text = extractText(postEl);
+    if (!text || text.length < 60) {
+      flashBtn(btnEl, '⚠️ Too short');
+      return;
+    }
 
-    highlightBlock(block);
-    showToast(e.clientX, e.clientY, 'Analyzing content...');
+    flashBtn(btnEl, '⏳ Sending...');
+
+    const author = extractAuthor(postEl);
+    const siteName = document.querySelector('meta[property="og:site_name"]')?.content || 'Facebook';
 
     chrome.runtime.sendMessage({
       type: 'POST_CLICKED',
       data: {
         text: text.substring(0, 4000),
-        author: meta.author,
-        pageTitle: meta.pageTitle,
-        siteName: meta.siteName,
-        images: meta.images,
+        author,
+        pageTitle: document.title || '',
+        siteName,
         pageUrl: window.location.href,
-        source: detectSource()
+        source: 'Facebook'
       }
     });
-  }, true);
 
-  // ─── Detect source site ───────────────────────────────────────────────────
-  function detectSource() {
-    const h = location.hostname;
-    if (h.includes('facebook.com')) return 'Facebook';
-    if (h.includes('instagram.com')) return 'Instagram';
-    if (h.includes('linkedin.com')) return 'LinkedIn';
-    if (h.includes('twitter.com') || h.includes('x.com')) return 'X/Twitter';
-    if (h.includes('reddit.com')) return 'Reddit';
-    if (h.includes('youtube.com')) return 'YouTube';
-    if (h.includes('tiktok.com')) return 'TikTok';
-    return 'Web';
+    // Highlight the post briefly
+    const prev = postEl.style.outline;
+    postEl.style.outline = '2px solid #6366f1';
+    postEl.style.outlineOffset = '3px';
+    postEl.style.borderRadius = '4px';
+    setTimeout(() => {
+      postEl.style.outline = prev;
+      postEl.style.outlineOffset = '';
+      postEl.style.borderRadius = '';
+    }, 1800);
   }
 
-  // ─── Listen for toggle from sidebar ──────────────────────────────────────
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === 'SET_ANALYSIS_ENABLED') analysisEnabled = msg.enabled;
-  });
+  function flashBtn(btnEl, msg) {
+    const prev = btnEl.innerHTML;
+    btnEl.innerHTML = msg;
+    setTimeout(() => { btnEl.innerHTML = prev; }, 1500);
+  }
+
+  // ─── Extract clean text from post ────────────────────────────────────────
+  const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','INPUT','TEXTAREA','SELECT','BUTTON','SVG','CANVAS','VIDEO','AUDIO','IFRAME']);
+
+  function extractText(container) {
+    const seen = new Set();
+    const parts = [];
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const p = node.parentElement;
+        if (!p) return NodeFilter.FILTER_REJECT;
+        if (SKIP.has(p.tagName)) return NodeFilter.FILTER_REJECT;
+        const s = window.getComputedStyle(p);
+        if (s.display === 'none' || s.visibility === 'hidden') return NodeFilter.FILTER_REJECT;
+        if (p.closest('button, [role="button"], nav, [role="navigation"], [aria-label*="action" i], [aria-label*="react" i], [aria-label*="comment" i], [aria-label*="share" i]')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let node;
+    while ((node = walker.nextNode())) {
+      const t = node.textContent.trim();
+      if (t.length > 1 && !seen.has(t)) { seen.add(t); parts.push(t); }
+    }
+    return parts.join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function extractAuthor(postEl) {
+    const el = postEl.querySelector('h2 a, h3 a, strong a, [data-hovercard-prefer-name-as-fallback="1"]');
+    return el ? el.textContent.trim().substring(0, 80) : '';
+  }
 
 })();

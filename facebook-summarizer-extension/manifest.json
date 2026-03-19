@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Content Analyzer AI",
-  "version": "2.0.0",
-  "description": "Click any text content on any website to get AI-powered summary, subtext, intent and emotion analysis. Works on Facebook, Instagram, LinkedIn, news sites, and more.",
+  "name": "Facebook Post Analyzer",
+  "version": "2.1.0",
+  "description": "Hover over any Facebook post to analyze it with AI — get summary, subtext, intent, emotion, and red flags.",
   "permissions": [
     "storage",
     "activeTab",
@@ -11,14 +11,15 @@
     "tabs"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "*://*.facebook.com/*",
+    "https://api.anthropic.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["*://*.facebook.com/*"],
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
