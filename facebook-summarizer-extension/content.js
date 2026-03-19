@@ -3,99 +3,22 @@
 (function () {
   'use strict';
 
-  // Only run on Facebook
   if (!location.hostname.includes('facebook.com')) return;
 
-  const BTN_ID = 'fb-analyzer-btn';
-  let btn = null;
-  let activePost = null;
-  let hideTimer = null;
-
-  // ─── Create the floating analyze button ──────────────────────────────────
-  function createBtn() {
-    const el = document.createElement('button');
-    el.id = BTN_ID;
-    el.innerHTML = '🔍 Analyze';
-    el.style.cssText = `
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      z-index: 2147483640;
-      background: #6366f1;
-      color: white;
-      border: none;
-      border-radius: 20px;
-      padding: 5px 12px;
-      font-size: 12px;
-      font-weight: 600;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      cursor: pointer;
-      box-shadow: 0 2px 8px rgba(99,102,241,0.5);
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.15s ease;
-      white-space: nowrap;
-      line-height: 1;
-    `;
-    el.addEventListener('mouseenter', () => {
-      clearTimeout(hideTimer);
-    });
-    el.addEventListener('mouseleave', () => {
-      scheduleHide();
-    });
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      if (activePost) triggerAnalysis(activePost, el);
-    });
-    document.body.appendChild(el);
-    return el;
-  }
-
-  function getBtn() {
-    if (!btn || !document.body.contains(btn)) btn = createBtn();
-    return btn;
-  }
-
-  // ─── Show button over a post ──────────────────────────────────────────────
-  function showBtn(postEl) {
-    clearTimeout(hideTimer);
-    activePost = postEl;
-
-    // Position button inside the post using absolute inside fixed container
-    const rect = postEl.getBoundingClientRect();
-    const b = getBtn();
-
-    b.style.position = 'fixed';
-    b.style.top = (rect.top + 8) + 'px';
-    b.style.right = (window.innerWidth - rect.right + 8) + 'px';
-    b.style.left = 'auto';
-    b.style.opacity = '1';
-    b.style.pointerEvents = 'auto';
-  }
-
-  function scheduleHide() {
-    clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => {
-      const b = getBtn();
-      b.style.opacity = '0';
-      b.style.pointerEvents = 'none';
-      activePost = null;
-    }, 300);
-  }
-
-  // ─── Attach hover listeners to a post ────────────────────────────────────
+  // ─── Attach click listener to a post ─────────────────────────────────────
   function attachPost(postEl) {
     if (postEl._analyzerAttached) return;
     postEl._analyzerAttached = true;
 
-    postEl.addEventListener('mouseenter', () => showBtn(postEl));
-    postEl.addEventListener('mouseleave', () => scheduleHide());
+    postEl.addEventListener('click', (e) => {
+      // Ignore clicks on buttons, links, inputs
+      if (e.target.closest('a, button, input, textarea, [role="button"]')) return;
+      triggerAnalysis(postEl);
+    });
   }
 
   // ─── Observe Facebook feed for new posts ─────────────────────────────────
   function scanPosts() {
-    // Facebook posts are role="article" inside the feed
     document.querySelectorAll('[role="article"]').forEach(attachPost);
   }
 
@@ -104,14 +27,9 @@
   scanPosts();
 
   // ─── Trigger analysis ────────────────────────────────────────────────────
-  function triggerAnalysis(postEl, btnEl) {
+  function triggerAnalysis(postEl) {
     const text = extractText(postEl);
-    if (!text || text.length < 60) {
-      flashBtn(btnEl, '⚠️ Too short');
-      return;
-    }
-
-    flashBtn(btnEl, '⏳ Sending...');
+    if (!text || text.length < 60) return;
 
     const author = extractAuthor(postEl);
     const siteName = document.querySelector('meta[property="og:site_name"]')?.content || 'Facebook';
@@ -128,22 +46,14 @@
       }
     });
 
-    // Highlight the post briefly
+    // Brief highlight so user sees which post was picked
     const prev = postEl.style.outline;
     postEl.style.outline = '2px solid #6366f1';
     postEl.style.outlineOffset = '3px';
-    postEl.style.borderRadius = '4px';
     setTimeout(() => {
       postEl.style.outline = prev;
       postEl.style.outlineOffset = '';
-      postEl.style.borderRadius = '';
-    }, 1800);
-  }
-
-  function flashBtn(btnEl, msg) {
-    const prev = btnEl.innerHTML;
-    btnEl.innerHTML = msg;
-    setTimeout(() => { btnEl.innerHTML = prev; }, 1500);
+    }, 1200);
   }
 
   // ─── Extract clean text from post ────────────────────────────────────────
