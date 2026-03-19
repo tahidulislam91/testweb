@@ -11,6 +11,8 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // ─── Port from sidebar ────────────────────────────────────────────────────────
+// NOTE: Service workers can sleep and lose port references.
+// We use storage as the reliable channel, port only as a wake signal.
 let sidebarPort = null;
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -24,25 +26,17 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.type !== 'POST_CLICKED') return;
 
   const windowId = sender.tab?.windowId;
-  const postData = msg.data;
 
+  // 1. Save post data to storage — sidebar reads from here
+  chrome.storage.local.set({ pendingPost: msg.data, pendingTimestamp: Date.now() });
+
+  // 2. Open the sidepanel
+  if (windowId) {
+    chrome.sidePanel.open({ windowId }).catch(() => {});
+  }
+
+  // 3. Ping sidebar via port if it's already open
   if (sidebarPort) {
-    // Sidebar is already open — send data directly through the port.
-    // This avoids any storage timing race: the sidebar gets the data
-    // immediately and calls startAnalysis without touching storage.
-    try {
-      sidebarPort.postMessage({ type: 'ANALYZE', data: postData });
-    } catch (e) {
-      sidebarPort = null;
-      // Port was stale — fall through to storage + open approach below
-      chrome.storage.local.set({ pendingPost: postData, pendingTimestamp: Date.now() });
-      if (windowId) chrome.sidePanel.open({ windowId }).catch(() => {});
-    }
-  } else {
-    // Sidebar is not open (or port not yet established).
-    // Save to storage first so DOMContentLoaded can read it, THEN open panel.
-    chrome.storage.local.set({ pendingPost: postData, pendingTimestamp: Date.now() }, () => {
-      if (windowId) chrome.sidePanel.open({ windowId }).catch(() => {});
-    });
+    try { sidebarPort.postMessage({ type: 'NEW_POST' }); } catch (e) {}
   }
 });

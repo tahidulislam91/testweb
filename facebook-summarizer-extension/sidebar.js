@@ -6,19 +6,12 @@ let currentPostData = null;
 let lastAnalysis = null;
 let analysisEnabled = true;
 let port = null;
-let _isReconnect = false; // true when port is reconnecting after SW restart
-
-// Reusable div for HTML escaping (avoids creating a new element on every call)
-const _escDiv = document.createElement('div');
-function escapeHtml(str) {
-  _escDiv.textContent = str || '';
-  return _escDiv.innerHTML;
-}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   connectPort();
   loadSettings();
+  checkApiKey();
   bindEvents();
   showState('empty');
   checkPendingPost();
@@ -30,23 +23,12 @@ function connectPort() {
     port = chrome.runtime.connect({ name: 'sidebar' });
     port.onMessage.addListener((msg) => {
       if (msg.type === 'NEW_POST') checkPendingPost();
-      else if (msg.type === 'ANALYZE') startAnalysis(msg.data);
     });
     port.onDisconnect.addListener(() => {
       port = null;
-      _isReconnect = true;
-      setTimeout(connectPort, 300); // Faster reconnect (was 1000ms)
+      setTimeout(connectPort, 1000);
     });
-    // On reconnect after SW restart: check if data arrived while port was down.
-    // (DOMContentLoaded already handles the initial-load case separately.)
-    if (_isReconnect) {
-      _isReconnect = false;
-      checkPendingPost();
-    }
-  } catch (e) {
-    // Retry if connect failed
-    setTimeout(connectPort, 1000);
-  }
+  } catch (e) {}
 }
 
 // ─── Read pending post from storage ──────────────────────────────────────────
@@ -71,8 +53,6 @@ function loadSettings() {
       analysisEnabled = data.analysisEnabled;
       updateToggleBtn();
     }
-    // Check API key inline — avoids a separate storage read
-    $('noApiKey').classList.toggle('hidden', !!data.apiKey);
   });
 }
 
@@ -82,7 +62,13 @@ function saveSettings() {
   chrome.storage.sync.set({ apiKey, model }, () => {
     $('settingsSaved').classList.remove('hidden');
     setTimeout(() => $('settingsSaved').classList.add('hidden'), 2000);
-    $('noApiKey').classList.toggle('hidden', !!apiKey);
+    checkApiKey();
+  });
+}
+
+function checkApiKey() {
+  chrome.storage.sync.get(['apiKey'], (data) => {
+    $('noApiKey').classList.toggle('hidden', !!data.apiKey);
   });
 }
 
@@ -101,13 +87,14 @@ function updateToggleBtn() {
 // ─── Collapsible sections ─────────────────────────────────────────────────────
 function bindCollapsibles() {
   document.querySelectorAll('.section-header[data-target]').forEach(header => {
-    if (header._colBound) return;
-    header._colBound = true;
-    header.addEventListener('click', (e) => {
-      // Don't toggle when clicking the copy button
+    // Remove old listener by cloning
+    const fresh = header.cloneNode(true);
+    header.parentNode.replaceChild(fresh, header);
+    fresh.addEventListener('click', (e) => {
+      // Don't toggle when clicking copy button
       if (e.target.closest('.section-copy-btn')) return;
-      const body = $(header.getAttribute('data-target'));
-      const chevron = header.querySelector('.chevron');
+      const body = $(fresh.getAttribute('data-target'));
+      const chevron = fresh.querySelector('.chevron');
       const isCollapsed = body.classList.toggle('collapsed');
       if (chevron) chevron.classList.toggle('open', !isCollapsed);
     });
@@ -142,23 +129,17 @@ function bindEvents() {
 
   $('retryBtn').addEventListener('click', () => { if (currentPostData) startAnalysis(currentPostData); });
   $('analyzeAgain').addEventListener('click', () => { if (currentPostData) startAnalysis(currentPostData); });
-
-  // Section copy buttons
-  $('copySummaryBtn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    copySectionText('summaryBody', $('copySummaryBtn'));
-  });
-  $('copySubtextBtn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    copySectionText('subtextBody', $('copySubtextBtn'));
-  });
-  $('copyEmotionBtn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    copySectionText('emotionBody', $('copyEmotionBtn'));
-  });
-
-  // Copy full analysis
+  $('shareBtn').addEventListener('click', shareAnalysis);
   $('copyAllBtn').addEventListener('click', copyFullAnalysis);
+
+  // Section copy buttons — use event delegation so it works after cloneNode rebinds
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.section-copy-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    const sectionId = btn.getAttribute('data-copy-section');
+    if (sectionId) copySectionText(sectionId, btn);
+  });
 
   bindCollapsibles();
 }
@@ -191,6 +172,7 @@ async function startAnalysis(postData) {
 async function callClaude(postData, settings) {
   const model = settings.model || 'claude-haiku-4-5-20251001';
 
+  // Build the prompt with clear JSON schema — no inline examples inside arrays
   const systemPrompt = `You are an expert content analyst, psychologist, and critical thinking coach.
 You analyze web content from any language (especially Bangla and English).
 Detect the content language and write analysis fields in that same language.
@@ -268,7 +250,7 @@ Rules:
   const data = await response.json();
   const raw = data.content?.[0]?.text || '';
 
-  // Strip any accidental markdown fences
+  // Extract JSON — strip any accidental markdown fences
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   const match = cleaned.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('Could not parse AI response. Please try again.');
@@ -280,7 +262,7 @@ Rules:
     throw new Error('AI returned malformed JSON. Please try again.');
   }
 
-  // Filter and sort emotions — keep only meaningful scores
+  // Filter and sort emotions
   if (Array.isArray(parsed.emotions)) {
     parsed.emotions = parsed.emotions
       .filter(e => typeof e.score === 'number' && e.score > 0.05)
@@ -307,16 +289,27 @@ function renderResults(analysis, postData) {
   badge.textContent = lang;
   badge.className = 'lang-badge ' + (lang === 'Bangla' ? 'bangla' : lang === 'Mixed' ? 'mixed' : 'english');
 
+  // Original text
   $('originalText').textContent = postData.text || '';
+
+  // Summary
   $('summaryText').textContent = analysis.summary || '';
+
+  // Subtext
   $('subtextText').textContent = analysis.subtext || '';
 
+  // Intent tags
   renderIntentTags(analysis.intents || []);
+
+  // Red flags
   renderRedFlags(analysis.redFlags || []);
+
+  // Emotions
   renderEmotionBars(analysis.emotions || []);
   $('emotionContext').textContent = analysis.emotionContext || '';
 
   showState('results');
+  // Re-bind collapsibles after results are shown
   bindCollapsibles();
 }
 
@@ -402,13 +395,49 @@ function renderEmotionBars(emotions) {
   });
 }
 
-// ─── Copy helpers ─────────────────────────────────────────────────────────────
-function copySectionText(sectionBodyId, btnEl) {
-  const body = $(sectionBodyId);
+// ─── Share (original) ─────────────────────────────────────────────────────────
+function shareAnalysis() {
+  if (!lastAnalysis || !currentPostData) return;
+  const a = lastAnalysis;
+  const flags = (a.redFlags || []).map(f => `  🚩 ${f.type}: "${f.quote}" — ${f.explanation}`).join('\n');
+  const emotions = (a.emotions || []).map(e => `  ${e.label}: ${Math.round(e.score * 100)}%`).join('\n');
+  const intents = (a.intents || []).join(', ');
+
+  const lines = [
+    `📊 Facebook Post Analysis`,
+    `─────────────────────────`,
+    `👤 ${currentPostData.author || 'Unknown'}  •  ${new Date().toLocaleDateString()}`,
+    ``,
+    `📝 Summary`,
+    a.summary || '',
+    ``,
+    `💭 Subtext & Intent`,
+    a.subtext || '',
+    intents ? `Tags: ${intents}` : '',
+    flags ? `\n🚩 Red Flags\n${flags}` : '',
+    ``,
+    `❤️ Emotions`,
+    emotions,
+    ``,
+    `─────────────────────────`,
+    `Analyzed with Facebook Post Analyzer`
+  ].filter(l => l !== undefined).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+
+  // Try native share first, fall back to clipboard
+  if (navigator.share) {
+    navigator.share({ text: lines }).catch(() => copyToClipboard(lines));
+  } else {
+    copyToClipboard(lines);
+  }
+}
+
+// ─── Copy helpers (new) ───────────────────────────────────────────────────────
+function copySectionText(sectionId, btnEl) {
+  const body = $(sectionId);
   if (!body) return;
   const text = body.innerText.trim();
   if (!text) return;
-  writeClipboard(text, btnEl);
+  copyToClipboard(text, btnEl);
 }
 
 function copyFullAnalysis() {
@@ -438,20 +467,23 @@ function copyFullAnalysis() {
     `Analyzed with Content Analyzer AI`
   ].filter(l => l !== undefined).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 
-  writeClipboard(text, null);
+  copyToClipboard(text);
 }
 
-function writeClipboard(text, btnEl) {
+// ─── Clipboard ────────────────────────────────────────────────────────────────
+function copyToClipboard(text, feedbackBtn) {
   const showFeedback = () => {
-    if (btnEl) {
-      const origHTML = btnEl.innerHTML;
-      btnEl.innerHTML = '✓';
-      btnEl.classList.add('copied');
+    if (feedbackBtn) {
+      // Show checkmark on the section copy button briefly
+      const orig = feedbackBtn.textContent;
+      feedbackBtn.textContent = '✓';
+      feedbackBtn.classList.add('copied');
       setTimeout(() => {
-        btnEl.innerHTML = origHTML;
-        btnEl.classList.remove('copied');
+        feedbackBtn.textContent = orig;
+        feedbackBtn.classList.remove('copied');
       }, 1500);
     } else {
+      // Show the shared "Copied" banner
       const el = $('shareCopied');
       el.classList.remove('hidden');
       setTimeout(() => el.classList.add('hidden'), 2500);
@@ -459,10 +491,11 @@ function writeClipboard(text, btnEl) {
   };
 
   navigator.clipboard.writeText(text).then(showFeedback).catch(() => {
-    // Fallback for environments without clipboard API
+    // Fallback: textarea trick
     const ta = document.createElement('textarea');
     ta.value = text;
-    ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
     document.body.appendChild(ta);
     ta.select();
     document.execCommand('copy');
@@ -474,4 +507,10 @@ function writeClipboard(text, btnEl) {
 function showError(message) {
   $('errorMessage').textContent = message || 'An error occurred. Please try again.';
   showState('error');
+}
+
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str || '';
+  return d.innerHTML;
 }

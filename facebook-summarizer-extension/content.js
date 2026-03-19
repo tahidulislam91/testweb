@@ -99,12 +99,7 @@
     document.querySelectorAll('[role="article"]').forEach(attachPost);
   }
 
-  // Debounce MutationObserver to avoid scanning on every single DOM change
-  let scanTimer = null;
-  const observer = new MutationObserver(() => {
-    clearTimeout(scanTimer);
-    scanTimer = setTimeout(scanPosts, 200);
-  });
+  const observer = new MutationObserver(() => scanPosts());
   observer.observe(document.body, { childList: true, subtree: true });
   scanPosts();
 
@@ -130,13 +125,6 @@
         siteName,
         pageUrl: window.location.href,
         source: 'Facebook'
-      }
-    }).catch(err => {
-      if (err?.message?.includes('Extension context invalidated') ||
-          err?.message?.includes('Could not establish connection')) {
-        flashBtn(btnEl, '🔄 Refresh page');
-      } else {
-        flashBtn(btnEl, '❌ Failed');
       }
     });
 

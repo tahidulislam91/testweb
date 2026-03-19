@@ -99,9 +99,7 @@
         <div class="section-header" data-target="summaryBody">
           <span class="section-icon">📝</span>
           <span class="section-title">Summary</span>
-          <button class="section-copy-btn" id="copySummaryBtn" title="Copy summary">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          </button>
+          <button class="section-copy-btn" data-copy-section="summaryBody" title="Copy summary">📋</button>
           <span class="chevron open">▾</span>
         </div>
         <div id="summaryBody" class="section-body">
@@ -114,9 +112,7 @@
         <div class="section-header" data-target="subtextBody">
           <span class="section-icon">💭</span>
           <span class="section-title">Subtext &amp; Intent</span>
-          <button class="section-copy-btn" id="copySubtextBtn" title="Copy subtext &amp; intent">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          </button>
+          <button class="section-copy-btn" data-copy-section="subtextBody" title="Copy subtext">📋</button>
           <span class="chevron open">▾</span>
         </div>
         <div id="subtextBody" class="section-body">
@@ -136,9 +132,7 @@
         <div class="section-header" data-target="emotionBody">
           <span class="section-icon">❤️</span>
           <span class="section-title">Emotion &amp; Tone</span>
-          <button class="section-copy-btn" id="copyEmotionBtn" title="Copy emotion &amp; tone">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          </button>
+          <button class="section-copy-btn" data-copy-section="emotionBody" title="Copy emotion">📋</button>
           <span class="chevron open">▾</span>
         </div>
         <div id="emotionBody" class="section-body">
@@ -150,6 +144,9 @@
       <div class="footer-actions">
         <div class="action-row">
           <button id="analyzeAgain" class="ghost-btn flex-1">🔄 Re-analyze</button>
+          <button id="shareBtn" class="share-btn flex-1">📤 Share</button>
+        </div>
+        <div class="action-row" style="margin-top:6px">
           <button id="copyAllBtn" class="copy-all-btn flex-1">📋 Copy Analysis</button>
         </div>
         <div id="shareCopied" class="share-copied hidden">✓ Copied to clipboard!</div>
