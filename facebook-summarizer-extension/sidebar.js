@@ -4,13 +4,43 @@ const $ = id => document.getElementById(id);
 
 let currentPostData = null;
 let analysisEnabled = true;
+let port = null;
 
+// ─── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  connectToBackground();
   loadSettings();
   checkApiKey();
   bindEvents();
   showState('empty');
 });
+
+// ─── Port: Connect to background for reliable messaging ───────────────────────
+function connectToBackground() {
+  port = chrome.runtime.connect({ name: 'sidebar' });
+
+  port.onMessage.addListener((msg) => {
+    if (msg.type === 'ANALYZE_POST') {
+      currentPostData = msg.data;
+      analyzePost(msg.data);
+    }
+    if (msg.type === 'ANALYSIS_STEP') {
+      updateLoadingStep(msg.step);
+      $('loadingText').textContent = msg.text;
+    }
+    if (msg.type === 'ANALYSIS_COMPLETE') {
+      renderResults(msg.data, msg.postData);
+    }
+    if (msg.type === 'ANALYSIS_ERROR') {
+      showError(msg.message);
+    }
+  });
+
+  port.onDisconnect.addListener(() => {
+    // Reconnect if background wakes up
+    setTimeout(connectToBackground, 500);
+  });
+}
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 function loadSettings() {
@@ -43,10 +73,7 @@ function checkApiKey() {
 // ─── States ───────────────────────────────────────────────────────────────────
 function showState(state) {
   ['emptyState', 'loadingState', 'results', 'errorState'].forEach(id => $(id).classList.add('hidden'));
-  if (state === 'empty') $('emptyState').classList.remove('hidden');
-  if (state === 'loading') $('loadingState').classList.remove('hidden');
-  if (state === 'results') $('results').classList.remove('hidden');
-  if (state === 'error') $('errorState').classList.remove('hidden');
+  $({ empty: 'emptyState', loading: 'loadingState', results: 'results', error: 'errorState' }[state]).classList.remove('hidden');
 }
 
 function updateLoadingStep(step) {
@@ -103,20 +130,6 @@ function bindEvents() {
   });
 }
 
-// ─── Messages from background ─────────────────────────────────────────────────
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === 'ANALYZE_POST') {
-    currentPostData = msg.data;
-    analyzePost(msg.data);
-  }
-  if (msg.type === 'ANALYSIS_STEP') {
-    updateLoadingStep(msg.step);
-    $('loadingText').textContent = msg.text;
-  }
-  if (msg.type === 'ANALYSIS_COMPLETE') renderResults(msg.data, msg.postData);
-  if (msg.type === 'ANALYSIS_ERROR') showError(msg.message);
-});
-
 // ─── Analyze ──────────────────────────────────────────────────────────────────
 function analyzePost(postData) {
   currentPostData = postData;
@@ -125,12 +138,12 @@ function analyzePost(postData) {
   $('step1').textContent = '📖 Reading post';
   $('step2').textContent = '🤖 AI analysis';
   $('step3').textContent = '✨ Done';
+  // Ask background to run analysis
   chrome.runtime.sendMessage({ type: 'DO_ANALYSIS', data: postData });
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
 function renderResults(analysis, postData) {
-  // Post meta
   if (postData.author) {
     $('postAuthor').textContent = postData.author;
     $('postMeta').classList.remove('hidden');
@@ -138,11 +151,13 @@ function renderResults(analysis, postData) {
     $('postMeta').classList.add('hidden');
   }
 
-  // Language badge
   if (analysis.detectedLanguage) {
     const badge = $('langBadge');
     badge.textContent = analysis.detectedLanguage;
-    badge.className = 'lang-badge ' + (analysis.detectedLanguage === 'Bangla' ? 'bangla' : analysis.detectedLanguage === 'Mixed' ? 'mixed' : 'english');
+    badge.className = 'lang-badge ' + (
+      analysis.detectedLanguage === 'Bangla' ? 'bangla' :
+      analysis.detectedLanguage === 'Mixed' ? 'mixed' : 'english'
+    );
   }
 
   $('originalText').textContent = postData.text || '';

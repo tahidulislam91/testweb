@@ -173,9 +173,9 @@
     highlightPost(container);
     showClickFeedback(e.clientX, e.clientY);
 
-    // Send to background for sidebar
+    // Send to background — background opens sidebar and forwards
     chrome.runtime.sendMessage({
-      type: 'ANALYZE_POST',
+      type: 'POST_CLICKED',
       data: postData
     });
   }, true);

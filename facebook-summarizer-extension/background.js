@@ -9,24 +9,65 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setOptions({ path: 'sidebar.html', enabled: true });
 });
 
-// ─── Message Router ───────────────────────────────────────────────────────────
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'ANALYZE_POST') {
-    chrome.runtime.sendMessage({ type: 'ANALYZE_POST', data: msg.data }).catch(() => {});
-    return true;
+// ─── Port: Sidebar connects here on load ──────────────────────────────────────
+let sidebarPort = null;
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'sidebar') return;
+
+  sidebarPort = port;
+
+  port.onDisconnect.addListener(() => {
+    sidebarPort = null;
+  });
+
+  // If a post was clicked before sidebar was ready, send it now
+  chrome.storage.local.get(['pendingPost'], (data) => {
+    if (data.pendingPost) {
+      port.postMessage({ type: 'ANALYZE_POST', data: data.pendingPost });
+      chrome.storage.local.remove('pendingPost');
+    }
+  });
+});
+
+function sendToSidebar(msg) {
+  if (sidebarPort) {
+    try { sidebarPort.postMessage(msg); } catch (e) {}
   }
+}
+
+// ─── Messages from content script and sidebar ─────────────────────────────────
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+
+  // Content script: user clicked a post
+  if (msg.type === 'POST_CLICKED') {
+    const windowId = sender.tab?.windowId;
+
+    // Auto-open the sidebar
+    if (windowId) chrome.sidePanel.open({ windowId });
+
+    if (sidebarPort) {
+      sendToSidebar({ type: 'ANALYZE_POST', data: msg.data });
+    } else {
+      // Sidebar not open yet — store and send once it connects
+      chrome.storage.local.set({ pendingPost: msg.data });
+    }
+    return;
+  }
+
+  // Sidebar: run analysis
   if (msg.type === 'DO_ANALYSIS') {
     doAnalysis(msg.data).catch(err => {
-      chrome.runtime.sendMessage({
+      sendToSidebar({
         type: 'ANALYSIS_ERROR',
         message: err.message || 'Analysis failed. Check your API key in settings.'
-      }).catch(() => {});
+      });
     });
     return true;
   }
 });
 
-// ─── Main Analysis Pipeline ───────────────────────────────────────────────────
+// ─── Analysis Pipeline ────────────────────────────────────────────────────────
 async function doAnalysis(postData) {
   const settings = await getSettings();
 
@@ -34,44 +75,41 @@ async function doAnalysis(postData) {
     throw new Error('No API key set. Open settings (⚙️) and add your Claude API key.');
   }
 
-  notifyStep(1, '📖 Reading post...');
-  await sleep(200);
-
-  notifyStep(2, '🤖 Running AI analysis...');
-  const result = await runClaudeAnalysis(postData, settings);
-
-  notifyStep(3, '✨ Done!');
+  sendToSidebar({ type: 'ANALYSIS_STEP', step: 1, text: '📖 Reading post...' });
   await sleep(150);
 
-  chrome.runtime.sendMessage({ type: 'ANALYSIS_COMPLETE', data: result, postData }).catch(() => {});
+  sendToSidebar({ type: 'ANALYSIS_STEP', step: 2, text: '🤖 Running AI analysis...' });
+  const result = await runClaudeAnalysis(postData, settings);
+
+  sendToSidebar({ type: 'ANALYSIS_STEP', step: 3, text: '✨ Done!' });
+  await sleep(100);
+
+  sendToSidebar({ type: 'ANALYSIS_COMPLETE', data: result, postData });
 }
 
-function notifyStep(step, text) {
-  chrome.runtime.sendMessage({ type: 'ANALYSIS_STEP', step, text }).catch(() => {});
-}
-
-// ─── Claude API Call ──────────────────────────────────────────────────────────
+// ─── Claude API ───────────────────────────────────────────────────────────────
 async function runClaudeAnalysis(postData, settings) {
   const model = settings.model || 'claude-haiku-4-5-20251001';
 
   const systemPrompt = `You are an expert social media analyst and psychologist.
-Analyze Facebook posts in ANY language (especially Bangla and English).
-Detect the language of the post and respond with analysis in the SAME language as the post.
-If the post is in Bangla, write your analysis in Bangla. If English, write in English. If mixed, use both.
-Always respond with valid JSON only. No markdown, no code blocks.`;
+Analyze Facebook posts written in ANY language, especially Bangla and English.
+Detect the post language and write your analysis in that same language.
+If the post is in Bangla, write summary/subtext/emotionContext in Bangla.
+If mixed, use the dominant language.
+Respond with valid JSON only. No markdown, no code fences.`;
 
-  const userPrompt = `Analyze this Facebook post carefully.
+  const userPrompt = `Analyze this Facebook post:
 
 Author: ${postData.author || 'Unknown'}
 Post: """${postData.text}"""
 ${postData.images?.length ? `Images: ${postData.images.join(', ')}` : ''}
 
-Return ONLY a valid JSON object with this exact structure:
+Return ONLY a valid JSON object:
 {
   "detectedLanguage": "Bangla" or "English" or "Mixed",
-  "summary": "2-3 sentence plain summary of what this post says. Write in the same language as the post.",
-  "subtext": "What does the author REALLY mean beneath the surface? Hidden intent, unspoken feelings, what they want people to think/feel. 2-3 insightful sentences. Same language as post.",
-  "intents": ["4-6 short intent tags like: Seeking Validation, Venting, Sharing News, Expressing Pride, Asking Help, Political Opinion, Promoting, Humor"],
+  "summary": "2-3 sentence plain summary. Same language as the post.",
+  "subtext": "What does the author REALLY mean beneath the surface? Hidden intent, unspoken feelings, what they want others to think or feel. 2-3 insightful sentences. Same language as post.",
+  "intents": ["4-6 short tags like: Seeking Validation, Venting, Sharing News, Expressing Pride, Asking Help, Political Opinion, Humor, Promoting"],
   "emotions": [
     {"label": "Joy", "score": 0.0},
     {"label": "Anger", "score": 0.0},
@@ -85,11 +123,7 @@ Return ONLY a valid JSON object with this exact structure:
   "emotionContext": "1-2 sentences explaining the emotional tone. Same language as post."
 }
 
-Rules:
-- All 8 emotions must be present with scores 0.0-1.0
-- Scores should reflect how strongly each emotion is present
-- Be specific and insightful, not generic
-- If post is in Bangla, write summary/subtext/emotionContext in Bangla`;
+All 8 emotions must be present with scores 0.0-1.0. Be specific, not generic.`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -121,7 +155,6 @@ Rules:
 
   const parsed = JSON.parse(jsonMatch[0]);
 
-  // Sort emotions by score, keep top 6 with score > 0.05
   if (parsed.emotions) {
     parsed.emotions = parsed.emotions
       .filter(e => e.score > 0.05)
@@ -134,9 +167,7 @@ Rules:
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function getSettings() {
-  return new Promise(resolve => {
-    chrome.storage.sync.get(['apiKey', 'model'], resolve);
-  });
+  return new Promise(resolve => chrome.storage.sync.get(['apiKey', 'model'], resolve));
 }
 
 function sleep(ms) {
