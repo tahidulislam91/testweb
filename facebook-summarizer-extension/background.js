@@ -130,7 +130,8 @@ All 8 emotions must be present with scores 0.0-1.0. Be specific, not generic.`;
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': settings.apiKey,
-      'anthropic-version': '2023-06-01'
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
       model,
