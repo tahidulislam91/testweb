@@ -29,6 +29,7 @@ function connectPort() {
     port = chrome.runtime.connect({ name: 'sidebar' });
     port.onMessage.addListener((msg) => {
       if (msg.type === 'NEW_POST') checkPendingPost();
+      else if (msg.type === 'ANALYZE') startAnalysis(msg.data);
     });
     port.onDisconnect.addListener(() => {
       port = null;
