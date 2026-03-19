@@ -27,16 +27,18 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
   const windowId = sender.tab?.windowId;
 
-  // 1. Save post data to storage — sidebar reads from here
-  chrome.storage.local.set({ pendingPost: msg.data, pendingTimestamp: Date.now() });
+  // 1. Save post data to storage first — THEN open panel and ping sidebar.
+  //    Without the callback, storage.set is not yet flushed when the sidebar
+  //    opens and calls checkPendingPost(), causing it to find nothing.
+  chrome.storage.local.set({ pendingPost: msg.data, pendingTimestamp: Date.now() }, () => {
+    // 2. Open the sidepanel
+    if (windowId) {
+      chrome.sidePanel.open({ windowId }).catch(() => {});
+    }
 
-  // 2. Open the sidepanel
-  if (windowId) {
-    chrome.sidePanel.open({ windowId }).catch(() => {});
-  }
-
-  // 3. Ping sidebar via port if it's already open
-  if (sidebarPort) {
-    try { sidebarPort.postMessage({ type: 'NEW_POST' }); } catch (e) {}
-  }
+    // 3. Ping sidebar via port if it's already open
+    if (sidebarPort) {
+      try { sidebarPort.postMessage({ type: 'NEW_POST' }); } catch (e) {}
+    }
+  });
 });

@@ -131,6 +131,12 @@
         pageUrl: window.location.href,
         source: 'Facebook'
       }
+    }).catch(err => {
+      // Extension was reloaded — this tab has a stale content script
+      if (err?.message?.includes('Extension context invalidated') ||
+          err?.message?.includes('Could not establish connection')) {
+        flashBtn(btnEl, '🔄 Refresh page');
+      }
     });
 
     // Highlight the post briefly
