@@ -23,7 +23,7 @@
         </button>
         <button id="settingsBtn" class="icon-btn" title="Settings">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-            <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
+            <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
           </svg>
         </button>
       </div>
@@ -38,7 +38,7 @@
           <input type="password" id="apiKeyInput" placeholder="sk-ant-..." />
           <button id="toggleApiKey" class="small-btn">Show</button>
         </div>
-        <p class="hint">Get your free key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></p>
+        <p class="hint">Get your key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></p>
       </div>
       <div class="form-group">
         <label for="modelSelect">AI Model</label>
@@ -51,20 +51,15 @@
         <button id="saveSettings" class="primary-btn">Save</button>
         <button id="closeSettings" class="ghost-btn">Cancel</button>
       </div>
-      <div id="settingsSaved" class="success-msg hidden">✓ Settings saved!</div>
+      <div id="settingsSaved" class="success-msg hidden">✓ Saved!</div>
     </div>
 
     <!-- Empty State -->
     <div id="emptyState" class="empty-state">
       <div class="empty-icon">🔍</div>
       <h2>Ready to Analyze</h2>
-      <p>Click any content on <strong>any website</strong> to get:</p>
-      <ul class="feature-list">
-        <li><span class="badge blue">📝</span> Summary (Bangla &amp; English)</li>
-        <li><span class="badge purple">💭</span> Hidden subtext &amp; intent</li>
-        <li><span class="badge orange">❤️</span> Emotion &amp; tone analysis</li>
-      </ul>
-      <p class="site-list">Works on Facebook, Instagram, LinkedIn, X, Reddit, news sites, blogs &amp; more</p>
+      <p>Click any text content on any website</p>
+      <p class="site-list">Facebook · Instagram · LinkedIn · X · News · Blogs</p>
       <div id="noApiKey" class="warning-box hidden">
         <strong>⚠️ API Key Required</strong>
         <p>Open settings to add your Claude API key.</p>
@@ -72,34 +67,26 @@
       </div>
     </div>
 
-    <!-- Loading State -->
+    <!-- Loading -->
     <div id="loadingState" class="loading-state hidden">
       <div class="spinner"></div>
-      <p id="loadingText">Analyzing post...</p>
-      <div class="loading-steps">
-        <div id="step1" class="step active">📖 Reading post</div>
-        <div id="step2" class="step">🤖 AI analysis</div>
-        <div id="step3" class="step">✨ Done</div>
-      </div>
+      <p id="loadingText">Analyzing...</p>
     </div>
 
     <!-- Results -->
     <div id="results" class="results hidden">
 
-      <!-- Post Meta -->
-      <div id="postMeta" class="post-meta hidden">
-        <div>
-          <div id="postSource" class="meta-source"></div>
-          <div id="postAuthor" class="meta-author"></div>
-        </div>
-        <div id="langBadge" class="lang-badge"></div>
+      <!-- Source / meta bar -->
+      <div id="sourceMeta" class="source-meta hidden">
+        <span id="sourceLabel" class="source-label"></span>
+        <span id="langBadge" class="lang-badge"></span>
       </div>
 
-      <!-- Original Post (collapsible) -->
+      <!-- Original Content -->
       <div class="section">
         <div class="section-header" data-target="originalContent">
           <span class="section-icon">📄</span>
-          <span class="section-title">Original Post</span>
+          <span class="section-title">Original Content</span>
           <span class="chevron">▾</span>
         </div>
         <div id="originalContent" class="section-body collapsed">
@@ -109,34 +96,43 @@
 
       <!-- Summary -->
       <div class="section">
-        <div class="section-header no-collapse">
+        <div class="section-header" data-target="summaryBody">
           <span class="section-icon">📝</span>
           <span class="section-title">Summary</span>
+          <span class="chevron open">▾</span>
         </div>
-        <div class="section-body">
+        <div id="summaryBody" class="section-body">
           <div id="summaryText" class="result-text"></div>
         </div>
       </div>
 
-      <!-- Subtext & Intent -->
+      <!-- Subtext, Intent & Red Flags -->
       <div class="section">
-        <div class="section-header no-collapse">
+        <div class="section-header" data-target="subtextBody">
           <span class="section-icon">💭</span>
           <span class="section-title">Subtext &amp; Intent</span>
+          <span class="chevron open">▾</span>
         </div>
-        <div class="section-body">
+        <div id="subtextBody" class="section-body">
           <div id="subtextText" class="result-text"></div>
           <div id="intentTags" class="tag-row"></div>
+
+          <!-- Red Flags -->
+          <div id="redFlagsBox" class="redflags-box hidden">
+            <div class="redflag-header">🚩 Red Flags Detected</div>
+            <div id="redFlagsList" class="redflag-list"></div>
+          </div>
         </div>
       </div>
 
       <!-- Emotion & Tone -->
       <div class="section">
-        <div class="section-header no-collapse">
+        <div class="section-header" data-target="emotionBody">
           <span class="section-icon">❤️</span>
           <span class="section-title">Emotion &amp; Tone</span>
+          <span class="chevron open">▾</span>
         </div>
-        <div class="section-body">
+        <div id="emotionBody" class="section-body">
           <div id="emotionBars" class="emotion-bars"></div>
           <div id="emotionContext" class="result-text mt-8"></div>
         </div>
@@ -147,7 +143,7 @@
       </div>
     </div>
 
-    <!-- Error State -->
+    <!-- Error -->
     <div id="errorState" class="error-state hidden">
       <div class="error-icon">⚠️</div>
       <p id="errorMessage">Something went wrong.</p>

@@ -1,5 +1,4 @@
 // Content Analyzer AI - Sidebar Script
-// The sidebar does the Claude API call directly (avoids service worker sleep issues)
 
 const $ = id => document.getElementById(id);
 
@@ -14,12 +13,10 @@ document.addEventListener('DOMContentLoaded', () => {
   checkApiKey();
   bindEvents();
   showState('empty');
-
-  // Check if there's already a pending post (e.g. sidebar was opened after click)
   checkPendingPost();
 });
 
-// ─── Port: just for receiving "NEW_POST" ping from background ─────────────────
+// ─── Port: ping from background when new post is clicked ─────────────────────
 function connectPort() {
   try {
     port = chrome.runtime.connect({ name: 'sidebar' });
@@ -33,11 +30,10 @@ function connectPort() {
   } catch (e) {}
 }
 
-// ─── Read post from storage and trigger analysis ───────────────────────────────
+// ─── Read pending post from storage ──────────────────────────────────────────
 function checkPendingPost() {
   chrome.storage.local.get(['pendingPost', 'pendingTimestamp'], (data) => {
     if (!data.pendingPost) return;
-    // Ignore stale posts older than 30 seconds
     if (Date.now() - (data.pendingTimestamp || 0) > 30000) {
       chrome.storage.local.remove(['pendingPost', 'pendingTimestamp']);
       return;
@@ -82,19 +78,24 @@ function showState(state) {
   $(map[state]).classList.remove('hidden');
 }
 
-function updateLoadingStep(step) {
-  ['step1', 'step2', 'step3'].forEach((id, i) => {
-    const el = $(id);
-    if (i + 1 < step) el.className = 'step done';
-    else if (i + 1 === step) el.className = 'step active';
-    else el.className = 'step';
-  });
+function updateToggleBtn() {
+  $('toggleBtn').classList.toggle('active', analysisEnabled);
+  $('toggleBtn').title = analysisEnabled ? 'Click to pause' : 'Click to resume';
 }
 
-function updateToggleBtn() {
-  const btn = $('toggleBtn');
-  btn.classList.toggle('active', analysisEnabled);
-  btn.title = analysisEnabled ? 'Click to pause analysis' : 'Click to resume analysis';
+// ─── Collapsible sections ─────────────────────────────────────────────────────
+function bindCollapsibles() {
+  document.querySelectorAll('.section-header[data-target]').forEach(header => {
+    // Remove old listener by cloning
+    const fresh = header.cloneNode(true);
+    header.parentNode.replaceChild(fresh, header);
+    fresh.addEventListener('click', () => {
+      const body = $(fresh.getAttribute('data-target'));
+      const chevron = fresh.querySelector('.chevron');
+      const isCollapsed = body.classList.toggle('collapsed');
+      if (chevron) chevron.classList.toggle('open', !isCollapsed);
+    });
+  });
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -112,9 +113,7 @@ function bindEvents() {
     chrome.storage.sync.set({ analysisEnabled });
     updateToggleBtn();
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: 'SET_ANALYSIS_ENABLED', enabled: analysisEnabled }).catch(() => {});
-      }
+      if (tabs[0]) chrome.tabs.sendMessage(tabs[0].id, { type: 'SET_ANALYSIS_ENABLED', enabled: analysisEnabled }).catch(() => {});
     });
   });
 
@@ -128,25 +127,14 @@ function bindEvents() {
   $('retryBtn').addEventListener('click', () => { if (currentPostData) startAnalysis(currentPostData); });
   $('analyzeAgain').addEventListener('click', () => { if (currentPostData) startAnalysis(currentPostData); });
 
-  document.querySelectorAll('.section-header[data-target]').forEach(header => {
-    header.addEventListener('click', () => {
-      const body = $(header.getAttribute('data-target'));
-      const chevron = header.querySelector('.chevron');
-      body.classList.toggle('collapsed');
-      if (chevron) chevron.classList.toggle('open');
-    });
-  });
+  bindCollapsibles();
 }
 
-// ─── Analysis (runs entirely in sidebar, not background) ──────────────────────
+// ─── Analysis ─────────────────────────────────────────────────────────────────
 async function startAnalysis(postData) {
   currentPostData = postData;
   showState('loading');
-
-  $('step1').textContent = '📖 Reading content';
-  $('step2').textContent = '🤖 AI analysis';
-  $('step3').textContent = '✨ Done';
-  updateLoadingStep(1);
+  $('loadingText').textContent = 'Analyzing content...';
 
   const settings = await new Promise(resolve => chrome.storage.sync.get(['apiKey', 'model'], resolve));
 
@@ -158,19 +146,68 @@ async function startAnalysis(postData) {
   }
 
   try {
-    updateLoadingStep(2);
     const result = await callClaude(postData, settings);
-    updateLoadingStep(3);
-    await sleep(100);
     renderResults(result, postData);
   } catch (err) {
     showError(err.message || 'Analysis failed. Please try again.');
   }
 }
 
-// ─── Claude API call (direct from sidebar page) ───────────────────────────────
+// ─── Claude API ───────────────────────────────────────────────────────────────
 async function callClaude(postData, settings) {
   const model = settings.model || 'claude-haiku-4-5-20251001';
+
+  // Build the prompt with clear JSON schema — no inline examples inside arrays
+  const systemPrompt = `You are an expert content analyst, psychologist, and critical thinking coach.
+You analyze web content from any language (especially Bangla and English).
+Detect the content language and write analysis fields in that same language.
+You MUST return only a valid raw JSON object. No markdown. No code fences. No explanation outside JSON.`;
+
+  const userPrompt = `Analyze the following content and return a single valid JSON object.
+
+SOURCE: ${postData.source || 'Web'}
+SITE: ${postData.siteName || postData.pageTitle || ''}
+AUTHOR: ${postData.author || 'Unknown'}
+CONTENT:
+"""
+${postData.text}
+"""
+
+Return this exact JSON structure with no extra text:
+{
+  "language": "English",
+  "summary": "Write 2-3 sentences summarizing what this content says. Use the same language as the content.",
+  "subtext": "Write 2-3 sentences about what the author really means beneath the surface. What are they not saying directly? What do they want readers to feel or think?",
+  "intents": ["intent tag 1", "intent tag 2", "intent tag 3", "intent tag 4"],
+  "redFlags": [
+    {
+      "type": "Overgeneralization",
+      "quote": "exact short phrase from content",
+      "explanation": "why this is a red flag"
+    }
+  ],
+  "emotions": [
+    {"label": "Joy", "score": 0.0},
+    {"label": "Anger", "score": 0.0},
+    {"label": "Sadness", "score": 0.0},
+    {"label": "Fear", "score": 0.0},
+    {"label": "Surprise", "score": 0.0},
+    {"label": "Trust", "score": 0.0},
+    {"label": "Sarcasm", "score": 0.0},
+    {"label": "Pride", "score": 0.0}
+  ],
+  "emotionContext": "1-2 sentences explaining the emotional tone."
+}
+
+Rules:
+- "language" must be exactly: "Bangla", "English", or "Mixed"
+- "summary", "subtext", "emotionContext" must be in the same language as the content
+- "intents" must be an array of 3-5 short phrase strings (no commas inside a string)
+  Examples of intent tags: Seeking Validation, Expressing Pride, Sharing News, Political Opinion, Venting Frustration, Promoting Product, Asking Help, Humor, Sarcasm, Spreading Fear
+- "redFlags" must be an array of objects. Include only real issues found. Can be empty array [].
+  Valid "type" values: Overgeneralization, Probable False Claim, Opinion Stated as Fact, Emotional Manipulation, Bias, Missing Context, Clickbait, Conspiracy Theory, Hate Speech
+- All 8 emotion scores are required, values between 0.0 and 1.0
+- Return ONLY the JSON object, nothing else`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -182,41 +219,9 @@ async function callClaude(postData, settings) {
     },
     body: JSON.stringify({
       model,
-      max_tokens: 1000,
-      system: `You are an expert social media and content analyst.
-Analyze content from any website in ANY language (especially Bangla and English).
-Detect the language and respond in that same language.
-If Bangla, write summary/subtext/emotionContext in Bangla.
-Respond with valid JSON only. No markdown, no code fences.`,
-      messages: [{
-        role: 'user',
-        content: `Analyze this content from ${postData.source || 'the web'}:
-
-Site: ${postData.siteName || postData.pageTitle || postData.pageUrl || 'Unknown'}
-Author: ${postData.author || 'Unknown'}
-Content: """${postData.text}"""
-${postData.images?.length ? `Images: ${postData.images.join(', ')}` : ''}
-
-Return ONLY valid JSON:
-{
-  "detectedLanguage": "Bangla" or "English" or "Mixed",
-  "summary": "2-3 sentence plain summary in the same language as the content.",
-  "subtext": "What does the author really mean beneath the surface? Hidden intent, unspoken feelings. 2-3 sentences in same language.",
-  "intents": ["4-6 short tags e.g.: Seeking Validation, Venting, Sharing News, Expressing Pride, Asking Help, Political Opinion, Humor, Promoting"],
-  "emotions": [
-    {"label": "Joy", "score": 0.0},
-    {"label": "Anger", "score": 0.0},
-    {"label": "Sadness", "score": 0.0},
-    {"label": "Fear", "score": 0.0},
-    {"label": "Surprise", "score": 0.0},
-    {"label": "Trust", "score": 0.0},
-    {"label": "Sarcasm", "score": 0.0},
-    {"label": "Pride", "score": 0.0}
-  ],
-  "emotionContext": "1-2 sentences on emotional tone. Same language as content."
-}
-All 8 emotions required, scores 0.0-1.0.`
-      }]
+      max_tokens: 1200,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }]
     })
   });
 
@@ -228,16 +233,24 @@ All 8 emotions required, scores 0.0-1.0.`
   }
 
   const data = await response.json();
-  const text = data.content?.[0]?.text || '';
+  const raw = data.content?.[0]?.text || '';
 
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Unexpected AI response. Please try again.');
+  // Extract JSON — strip any accidental markdown fences
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('Could not parse AI response. Please try again.');
 
-  const parsed = JSON.parse(match[0]);
+  let parsed;
+  try {
+    parsed = JSON.parse(match[0]);
+  } catch (e) {
+    throw new Error('AI returned malformed JSON. Please try again.');
+  }
 
-  if (parsed.emotions) {
+  // Filter and sort emotions
+  if (Array.isArray(parsed.emotions)) {
     parsed.emotions = parsed.emotions
-      .filter(e => e.score > 0.05)
+      .filter(e => typeof e.score === 'number' && e.score > 0.05)
       .sort((a, b) => b.score - a.score)
       .slice(0, 6);
   }
@@ -247,43 +260,92 @@ All 8 emotions required, scores 0.0-1.0.`
 
 // ─── Render ───────────────────────────────────────────────────────────────────
 function renderResults(analysis, postData) {
-  const hasSource = postData.source || postData.siteName || postData.author;
-  if (hasSource) {
-    $('postSource').textContent = postData.source || postData.siteName || '';
-    $('postAuthor').textContent = postData.author || '';
-    $('postMeta').classList.remove('hidden');
+  // Source meta bar
+  if (postData.source || postData.author) {
+    $('sourceLabel').textContent = [postData.source, postData.author].filter(Boolean).join(' · ');
+    $('sourceMeta').classList.remove('hidden');
   } else {
-    $('postMeta').classList.add('hidden');
+    $('sourceMeta').classList.add('hidden');
   }
 
-  if (analysis.detectedLanguage) {
-    const badge = $('langBadge');
-    badge.textContent = analysis.detectedLanguage;
-    badge.className = 'lang-badge ' + (
-      analysis.detectedLanguage === 'Bangla' ? 'bangla' :
-      analysis.detectedLanguage === 'Mixed' ? 'mixed' : 'english'
-    );
-  }
+  // Language badge
+  const lang = analysis.language || '';
+  const badge = $('langBadge');
+  badge.textContent = lang;
+  badge.className = 'lang-badge ' + (lang === 'Bangla' ? 'bangla' : lang === 'Mixed' ? 'mixed' : 'english');
 
+  // Original text
   $('originalText').textContent = postData.text || '';
-  $('summaryText').textContent = analysis.summary || 'No summary available.';
+
+  // Summary
+  $('summaryText').textContent = analysis.summary || '';
+
+  // Subtext
   $('subtextText').textContent = analysis.subtext || '';
+
+  // Intent tags
   renderIntentTags(analysis.intents || []);
+
+  // Red flags
+  renderRedFlags(analysis.redFlags || []);
+
+  // Emotions
   renderEmotionBars(analysis.emotions || []);
   $('emotionContext').textContent = analysis.emotionContext || '';
 
   showState('results');
+  // Re-bind collapsibles after results are shown
+  bindCollapsibles();
 }
 
 function renderIntentTags(intents) {
   const container = $('intentTags');
   container.innerHTML = '';
-  const colors = ['blue', 'purple', 'orange', 'green', 'red', 'yellow', 'gray'];
+  const colors = ['blue', 'purple', 'orange', 'green', 'gray', 'yellow'];
   intents.forEach((intent, i) => {
+    if (typeof intent !== 'string') return;
     const tag = document.createElement('span');
     tag.className = `tag ${colors[i % colors.length]}`;
-    tag.textContent = intent;
+    tag.textContent = intent.trim();
     container.appendChild(tag);
+  });
+}
+
+function renderRedFlags(flags) {
+  const box = $('redFlagsBox');
+  const list = $('redFlagsList');
+  list.innerHTML = '';
+
+  const valid = flags.filter(f => f && f.type);
+  if (valid.length === 0) {
+    box.classList.add('hidden');
+    return;
+  }
+
+  box.classList.remove('hidden');
+
+  const typeColors = {
+    'Overgeneralization': 'orange',
+    'Probable False Claim': 'red',
+    'Opinion Stated as Fact': 'yellow',
+    'Emotional Manipulation': 'red',
+    'Bias': 'orange',
+    'Missing Context': 'yellow',
+    'Clickbait': 'orange',
+    'Conspiracy Theory': 'red',
+    'Hate Speech': 'red'
+  };
+
+  valid.forEach(flag => {
+    const color = typeColors[flag.type] || 'orange';
+    const item = document.createElement('div');
+    item.className = 'redflag-item';
+    item.innerHTML = `
+      <span class="tag ${color} redflag-tag">${escapeHtml(flag.type)}</span>
+      ${flag.quote ? `<div class="redflag-quote">"${escapeHtml(flag.quote)}"</div>` : ''}
+      ${flag.explanation ? `<div class="redflag-explanation">${escapeHtml(flag.explanation)}</div>` : ''}
+    `;
+    list.appendChild(item);
   });
 }
 
@@ -297,12 +359,12 @@ function renderEmotionBars(emotions) {
   };
 
   emotions.forEach(({ label, score }) => {
-    const color = colorMap[label.toLowerCase()] || '#9ca3af';
-    const pct = Math.round(score * 100);
+    const color = colorMap[(label || '').toLowerCase()] || '#9ca3af';
+    const pct = Math.round((score || 0) * 100);
     const row = document.createElement('div');
     row.className = 'emotion-row';
     row.innerHTML = `
-      <span class="emotion-label">${label}</span>
+      <span class="emotion-label">${escapeHtml(label)}</span>
       <div class="emotion-bar-track">
         <div class="emotion-bar-fill" style="width:0%;background:${color}" data-width="${pct}%"></div>
       </div>
@@ -323,6 +385,8 @@ function showError(message) {
   showState('error');
 }
 
-function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str || '';
+  return d.innerHTML;
 }
