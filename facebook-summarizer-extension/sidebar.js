@@ -6,6 +6,7 @@ let currentPostData = null;
 let lastAnalysis = null;
 let analysisEnabled = true;
 let port = null;
+let _isReconnect = false; // true when port is reconnecting after SW restart
 
 // Reusable div for HTML escaping (avoids creating a new element on every call)
 const _escDiv = document.createElement('div');
@@ -33,9 +34,19 @@ function connectPort() {
     });
     port.onDisconnect.addListener(() => {
       port = null;
-      setTimeout(connectPort, 1000);
+      _isReconnect = true;
+      setTimeout(connectPort, 300); // Faster reconnect (was 1000ms)
     });
-  } catch (e) {}
+    // On reconnect after SW restart: check if data arrived while port was down.
+    // (DOMContentLoaded already handles the initial-load case separately.)
+    if (_isReconnect) {
+      _isReconnect = false;
+      checkPendingPost();
+    }
+  } catch (e) {
+    // Retry if connect failed
+    setTimeout(connectPort, 1000);
+  }
 }
 
 // ─── Read pending post from storage ──────────────────────────────────────────
