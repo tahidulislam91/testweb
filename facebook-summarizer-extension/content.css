@@ -1,0 +1,10 @@
+/* Facebook Post Analyzer - Content Styles */
+
+#fb-analyzer-indicator {
+  transition: opacity 0.3s ease;
+}
+
+[data-fb-analyzer-highlighted="true"] {
+  outline: 2px solid #1877f2 !important;
+  outline-offset: 2px !important;
+}
