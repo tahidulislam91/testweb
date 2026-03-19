@@ -1,4 +1,5 @@
-// Facebook Post Analyzer - Sidebar Script
+// Content Analyzer AI - Sidebar Script
+// The sidebar does the Claude API call directly (avoids service worker sleep issues)
 
 const $ = id => document.getElementById(id);
 
@@ -8,37 +9,41 @@ let port = null;
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  connectToBackground();
+  connectPort();
   loadSettings();
   checkApiKey();
   bindEvents();
   showState('empty');
+
+  // Check if there's already a pending post (e.g. sidebar was opened after click)
+  checkPendingPost();
 });
 
-// ─── Port: Connect to background for reliable messaging ───────────────────────
-function connectToBackground() {
-  port = chrome.runtime.connect({ name: 'sidebar' });
+// ─── Port: just for receiving "NEW_POST" ping from background ─────────────────
+function connectPort() {
+  try {
+    port = chrome.runtime.connect({ name: 'sidebar' });
+    port.onMessage.addListener((msg) => {
+      if (msg.type === 'NEW_POST') checkPendingPost();
+    });
+    port.onDisconnect.addListener(() => {
+      port = null;
+      setTimeout(connectPort, 1000);
+    });
+  } catch (e) {}
+}
 
-  port.onMessage.addListener((msg) => {
-    if (msg.type === 'ANALYZE_POST') {
-      currentPostData = msg.data;
-      analyzePost(msg.data);
+// ─── Read post from storage and trigger analysis ───────────────────────────────
+function checkPendingPost() {
+  chrome.storage.local.get(['pendingPost', 'pendingTimestamp'], (data) => {
+    if (!data.pendingPost) return;
+    // Ignore stale posts older than 30 seconds
+    if (Date.now() - (data.pendingTimestamp || 0) > 30000) {
+      chrome.storage.local.remove(['pendingPost', 'pendingTimestamp']);
+      return;
     }
-    if (msg.type === 'ANALYSIS_STEP') {
-      updateLoadingStep(msg.step);
-      $('loadingText').textContent = msg.text;
-    }
-    if (msg.type === 'ANALYSIS_COMPLETE') {
-      renderResults(msg.data, msg.postData);
-    }
-    if (msg.type === 'ANALYSIS_ERROR') {
-      showError(msg.message);
-    }
-  });
-
-  port.onDisconnect.addListener(() => {
-    // Reconnect if background wakes up
-    setTimeout(connectToBackground, 500);
+    chrome.storage.local.remove(['pendingPost', 'pendingTimestamp']);
+    startAnalysis(data.pendingPost);
   });
 }
 
@@ -70,10 +75,11 @@ function checkApiKey() {
   });
 }
 
-// ─── States ───────────────────────────────────────────────────────────────────
+// ─── UI States ────────────────────────────────────────────────────────────────
 function showState(state) {
   ['emptyState', 'loadingState', 'results', 'errorState'].forEach(id => $(id).classList.add('hidden'));
-  $({ empty: 'emptyState', loading: 'loadingState', results: 'results', error: 'errorState' }[state]).classList.remove('hidden');
+  const map = { empty: 'emptyState', loading: 'loadingState', results: 'results', error: 'errorState' };
+  $(map[state]).classList.remove('hidden');
 }
 
 function updateLoadingStep(step) {
@@ -106,7 +112,9 @@ function bindEvents() {
     chrome.storage.sync.set({ analysisEnabled });
     updateToggleBtn();
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) chrome.tabs.sendMessage(tabs[0].id, { type: 'SET_ANALYSIS_ENABLED', enabled: analysisEnabled }).catch(() => {});
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'SET_ANALYSIS_ENABLED', enabled: analysisEnabled }).catch(() => {});
+      }
     });
   });
 
@@ -117,8 +125,8 @@ function bindEvents() {
     $('toggleApiKey').textContent = show ? 'Hide' : 'Show';
   });
 
-  $('retryBtn').addEventListener('click', () => { if (currentPostData) analyzePost(currentPostData); });
-  $('analyzeAgain').addEventListener('click', () => { if (currentPostData) analyzePost(currentPostData); });
+  $('retryBtn').addEventListener('click', () => { if (currentPostData) startAnalysis(currentPostData); });
+  $('analyzeAgain').addEventListener('click', () => { if (currentPostData) startAnalysis(currentPostData); });
 
   document.querySelectorAll('.section-header[data-target]').forEach(header => {
     header.addEventListener('click', () => {
@@ -130,16 +138,111 @@ function bindEvents() {
   });
 }
 
-// ─── Analyze ──────────────────────────────────────────────────────────────────
-function analyzePost(postData) {
+// ─── Analysis (runs entirely in sidebar, not background) ──────────────────────
+async function startAnalysis(postData) {
   currentPostData = postData;
   showState('loading');
-  updateLoadingStep(1);
-  $('step1').textContent = '📖 Reading post';
+
+  $('step1').textContent = '📖 Reading content';
   $('step2').textContent = '🤖 AI analysis';
   $('step3').textContent = '✨ Done';
-  // Ask background to run analysis
-  chrome.runtime.sendMessage({ type: 'DO_ANALYSIS', data: postData });
+  updateLoadingStep(1);
+
+  const settings = await new Promise(resolve => chrome.storage.sync.get(['apiKey', 'model'], resolve));
+
+  if (!settings.apiKey) {
+    showState('empty');
+    $('noApiKey').classList.remove('hidden');
+    $('settingsPanel').classList.remove('hidden');
+    return;
+  }
+
+  try {
+    updateLoadingStep(2);
+    const result = await callClaude(postData, settings);
+    updateLoadingStep(3);
+    await sleep(100);
+    renderResults(result, postData);
+  } catch (err) {
+    showError(err.message || 'Analysis failed. Please try again.');
+  }
+}
+
+// ─── Claude API call (direct from sidebar page) ───────────────────────────────
+async function callClaude(postData, settings) {
+  const model = settings.model || 'claude-haiku-4-5-20251001';
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': settings.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 1000,
+      system: `You are an expert social media and content analyst.
+Analyze content from any website in ANY language (especially Bangla and English).
+Detect the language and respond in that same language.
+If Bangla, write summary/subtext/emotionContext in Bangla.
+Respond with valid JSON only. No markdown, no code fences.`,
+      messages: [{
+        role: 'user',
+        content: `Analyze this content from ${postData.source || 'the web'}:
+
+Site: ${postData.siteName || postData.pageTitle || postData.pageUrl || 'Unknown'}
+Author: ${postData.author || 'Unknown'}
+Content: """${postData.text}"""
+${postData.images?.length ? `Images: ${postData.images.join(', ')}` : ''}
+
+Return ONLY valid JSON:
+{
+  "detectedLanguage": "Bangla" or "English" or "Mixed",
+  "summary": "2-3 sentence plain summary in the same language as the content.",
+  "subtext": "What does the author really mean beneath the surface? Hidden intent, unspoken feelings. 2-3 sentences in same language.",
+  "intents": ["4-6 short tags e.g.: Seeking Validation, Venting, Sharing News, Expressing Pride, Asking Help, Political Opinion, Humor, Promoting"],
+  "emotions": [
+    {"label": "Joy", "score": 0.0},
+    {"label": "Anger", "score": 0.0},
+    {"label": "Sadness", "score": 0.0},
+    {"label": "Fear", "score": 0.0},
+    {"label": "Surprise", "score": 0.0},
+    {"label": "Trust", "score": 0.0},
+    {"label": "Sarcasm", "score": 0.0},
+    {"label": "Pride", "score": 0.0}
+  ],
+  "emotionContext": "1-2 sentences on emotional tone. Same language as content."
+}
+All 8 emotions required, scores 0.0-1.0.`
+      }]
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    if (response.status === 401) throw new Error('Invalid API key. Please check your key in Settings ⚙️.');
+    if (response.status === 429) throw new Error('Rate limit reached. Please wait a moment and try again.');
+    throw new Error(err.error?.message || `API error (${response.status})`);
+  }
+
+  const data = await response.json();
+  const text = data.content?.[0]?.text || '';
+
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('Unexpected AI response. Please try again.');
+
+  const parsed = JSON.parse(match[0]);
+
+  if (parsed.emotions) {
+    parsed.emotions = parsed.emotions
+      .filter(e => e.score > 0.05)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6);
+  }
+
+  return parsed;
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
@@ -218,4 +321,8 @@ function renderEmotionBars(emotions) {
 function showError(message) {
   $('errorMessage').textContent = message || 'An error occurred. Please try again.';
   showState('error');
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
 }

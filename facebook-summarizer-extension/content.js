@@ -49,39 +49,33 @@
 
   // ─── Find best content container from clicked element ────────────────────
   function findContentBlock(target) {
-    // Walk up the DOM looking for a semantic container
     let el = target;
-    let bestCandidate = null;
 
-    while (el && el !== document.body && el !== document.documentElement) {
-      if (SKIP_TAGS.has(el.tagName)) return null;
+    // First pass: walk up looking for a known semantic container
+    let cur = el;
+    while (cur && cur !== document.body && cur !== document.documentElement) {
+      if (SKIP_TAGS.has(cur.tagName)) break;
+      if (cur.matches('nav, header, footer, aside, [role="navigation"], [role="banner"], [role="complementary"]')) return null;
 
-      // Skip nav, header, footer, sidebars
-      if (el.matches('nav, header, footer, aside, [role="navigation"], [role="banner"], [role="complementary"]')) {
-        return null;
-      }
-
-      // Check if this element matches a known content selector
       for (const sel of CONTENT_SELECTORS) {
-        if (el.matches(sel)) {
-          const text = extractText(el);
-          if (text.length >= 80) return el;
+        if (cur.matches && cur.matches(sel)) {
+          const t = extractText(cur);
+          if (t.length >= 60) return cur;
         }
       }
-
-      // Track any element with decent text as a fallback candidate
-      if (!bestCandidate) {
-        const text = extractText(el);
-        if (text.length >= 150) bestCandidate = el;
-      }
-
-      el = el.parentElement;
+      cur = cur.parentElement;
     }
 
-    // Use best candidate if we found one
-    if (bestCandidate) {
-      const text = extractText(bestCandidate);
-      if (text.length >= 150) return bestCandidate;
+    // Second pass: find the closest ancestor with enough readable text
+    // Start from the clicked element and walk up, return the FIRST (innermost) one with >= 100 chars
+    cur = el;
+    while (cur && cur !== document.body && cur !== document.documentElement) {
+      if (SKIP_TAGS.has(cur.tagName)) { cur = cur.parentElement; continue; }
+      if (cur.matches('nav, header, footer, aside, [role="navigation"], [role="banner"], [role="complementary"]')) return null;
+
+      const t = extractText(cur);
+      if (t.length >= 100) return cur;
+      cur = cur.parentElement;
     }
 
     return null;
