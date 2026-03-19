@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Facebook Post Analyzer</title>
+  <title>Content Analyzer AI</title>
   <link rel="stylesheet" href="sidebar.css" />
 </head>
 <body>
@@ -13,7 +13,7 @@
     <header class="header">
       <div class="header-left">
         <img src="icons/icon32.png" alt="Logo" class="logo" />
-        <span class="title">Post Analyzer</span>
+        <span class="title">Content Analyzer</span>
       </div>
       <div class="header-right">
         <button id="toggleBtn" class="icon-btn" title="Pause analysis">
@@ -58,12 +58,13 @@
     <div id="emptyState" class="empty-state">
       <div class="empty-icon">🔍</div>
       <h2>Ready to Analyze</h2>
-      <p>Click any Facebook post to instantly get:</p>
+      <p>Click any content on <strong>any website</strong> to get:</p>
       <ul class="feature-list">
         <li><span class="badge blue">📝</span> Summary (Bangla &amp; English)</li>
         <li><span class="badge purple">💭</span> Hidden subtext &amp; intent</li>
         <li><span class="badge orange">❤️</span> Emotion &amp; tone analysis</li>
       </ul>
+      <p class="site-list">Works on Facebook, Instagram, LinkedIn, X, Reddit, news sites, blogs &amp; more</p>
       <div id="noApiKey" class="warning-box hidden">
         <strong>⚠️ API Key Required</strong>
         <p>Open settings to add your Claude API key.</p>
@@ -87,7 +88,10 @@
 
       <!-- Post Meta -->
       <div id="postMeta" class="post-meta hidden">
-        <div id="postAuthor" class="meta-author"></div>
+        <div>
+          <div id="postSource" class="meta-source"></div>
+          <div id="postAuthor" class="meta-author"></div>
+        </div>
         <div id="langBadge" class="lang-badge"></div>
       </div>
 

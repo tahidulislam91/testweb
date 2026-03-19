@@ -401,10 +401,27 @@ body {
   justify-content: space-between;
 }
 
+.meta-source {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--blue);
+  margin-bottom: 1px;
+}
+
 .meta-author {
   font-size: 12px;
   font-weight: 700;
   color: var(--gray-900);
+}
+
+.site-list {
+  font-size: 10px;
+  color: var(--gray-400);
+  margin-top: 10px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 /* LANGUAGE BADGE */

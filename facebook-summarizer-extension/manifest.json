@@ -1,28 +1,24 @@
 {
   "manifest_version": 3,
-  "name": "Facebook Post Analyzer",
-  "version": "1.0.0",
-  "description": "Click any Facebook post to get AI-powered summary, fact-check, subtext analysis, and emotion/intent insights.",
+  "name": "Content Analyzer AI",
+  "version": "2.0.0",
+  "description": "Click any text content on any website to get AI-powered summary, subtext, intent and emotion analysis. Works on Facebook, Instagram, LinkedIn, news sites, and more.",
   "permissions": [
     "storage",
     "activeTab",
     "scripting",
-    "sidePanel"
+    "sidePanel",
+    "tabs"
   ],
   "host_permissions": [
-    "https://www.facebook.com/*",
-    "https://facebook.com/*",
-    "https://api.anthropic.com/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://www.facebook.com/*",
-        "https://facebook.com/*"
-      ],
+      "matches": ["<all_urls>"],
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
@@ -33,7 +29,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Facebook Post Analyzer",
+    "default_title": "Content Analyzer AI",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

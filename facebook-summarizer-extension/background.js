@@ -98,11 +98,12 @@ If the post is in Bangla, write summary/subtext/emotionContext in Bangla.
 If mixed, use the dominant language.
 Respond with valid JSON only. No markdown, no code fences.`;
 
-  const userPrompt = `Analyze this Facebook post:
+  const userPrompt = `Analyze this content from ${postData.source || 'the web'}:
 
-Author: ${postData.author || 'Unknown'}
-Post: """${postData.text}"""
-${postData.images?.length ? `Images: ${postData.images.join(', ')}` : ''}
+Site: ${postData.siteName || postData.pageTitle || postData.pageUrl || 'Unknown'}
+Author/Posted by: ${postData.author || 'Unknown'}
+Content: """${postData.text}"""
+${postData.images?.length ? `Images described as: ${postData.images.join(', ')}` : ''}
 
 Return ONLY a valid JSON object:
 {

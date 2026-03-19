@@ -144,8 +144,10 @@ function analyzePost(postData) {
 
 // ─── Render ───────────────────────────────────────────────────────────────────
 function renderResults(analysis, postData) {
-  if (postData.author) {
-    $('postAuthor').textContent = postData.author;
+  const hasSource = postData.source || postData.siteName || postData.author;
+  if (hasSource) {
+    $('postSource').textContent = postData.source || postData.siteName || '';
+    $('postAuthor').textContent = postData.author || '';
     $('postMeta').classList.remove('hidden');
   } else {
     $('postMeta').classList.add('hidden');
