@@ -12,8 +12,7 @@
   "host_permissions": [
     "https://www.facebook.com/*",
     "https://facebook.com/*",
-    "https://api.anthropic.com/*",
-    "https://serpapi.com/*"
+    "https://api.anthropic.com/*"
   ],
   "background": {
     "service_worker": "background.js"

@@ -407,10 +407,16 @@ body {
   color: var(--gray-900);
 }
 
-.meta-time {
-  font-size: 11px;
-  color: var(--gray-400);
+/* LANGUAGE BADGE */
+.lang-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
 }
+.lang-badge.bangla { background: #dcfce7; color: #15803d; }
+.lang-badge.english { background: var(--blue-light); color: var(--blue); }
+.lang-badge.mixed { background: var(--purple-light); color: var(--purple); }
 
 /* SECTIONS */
 .section {
