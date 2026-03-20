@@ -1,18 +1,10 @@
-// Content Analyzer AI - Background Service Worker
-// Responsibility: open sidepanel + route click events to sidebar
-
-// ─── Open sidebar when extension icon is clicked ──────────────────────────────
-chrome.action.onClicked.addListener((tab) => {
-  chrome.sidePanel.open({ windowId: tab.windowId });
-});
+// Background Service Worker
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setOptions({ path: 'sidebar.html', enabled: true });
 });
 
-// ─── Port from sidebar ────────────────────────────────────────────────────────
-// NOTE: Service workers can sleep and lose port references.
-// We use storage as the reliable channel, port only as a wake signal.
+// Keep a reference to the sidebar port for live pings
 let sidebarPort = null;
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -21,22 +13,19 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => { sidebarPort = null; });
 });
 
-// ─── Route content clicks to sidebar ─────────────────────────────────────────
+// Route POST_CLICKED from content script → sidebar
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.type !== 'POST_CLICKED') return;
 
-  const windowId = sender.tab?.windowId;
-
-  // 1. Save post data to storage — sidebar reads from here
+  // 1. Save to storage (reliable even if sidebar isn't open yet)
   chrome.storage.local.set({ pendingPost: msg.data, pendingTimestamp: Date.now() });
 
-  // 2. Open the sidepanel
-  if (windowId) {
-    chrome.sidePanel.open({ windowId }).catch(() => {});
-  }
+  // 2. Open sidebar
+  const windowId = sender.tab?.windowId;
+  if (windowId) chrome.sidePanel.open({ windowId }).catch(() => {});
 
-  // 3. Ping sidebar via port if it's already open
+  // 3. Ping sidebar if already open
   if (sidebarPort) {
-    try { sidebarPort.postMessage({ type: 'NEW_POST' }); } catch (e) {}
+    try { sidebarPort.postMessage({ type: 'NEW_POST' }); } catch (_) {}
   }
 });

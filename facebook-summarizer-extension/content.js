@@ -1,77 +1,82 @@
-// Facebook Post Analyzer - Content Script (Facebook only)
-
+// Content Script — Facebook only
 (function () {
   'use strict';
 
   if (!location.hostname.includes('facebook.com')) return;
 
-  // ─── Attach click listener to a post ─────────────────────────────────────
+  let analysisEnabled = true;
+
+  // Sync enabled state from storage
+  chrome.storage.sync.get(['analysisEnabled'], (d) => {
+    if (typeof d.analysisEnabled !== 'undefined') analysisEnabled = d.analysisEnabled;
+  });
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'SET_ANALYSIS_ENABLED') analysisEnabled = msg.enabled;
+  });
+
+  // Attach click listener to each post once
   function attachPost(postEl) {
     if (postEl._analyzerAttached) return;
     postEl._analyzerAttached = true;
-
     postEl.addEventListener('click', (e) => {
-      // Ignore clicks on buttons, links, inputs
+      if (!analysisEnabled) return;
+      // Skip clicks on interactive elements
       if (e.target.closest('a, button, input, textarea, [role="button"]')) return;
-      triggerAnalysis(postEl);
+      sendPost(postEl);
     });
   }
 
-  // ─── Observe Facebook feed for new posts ─────────────────────────────────
-  function scanPosts() {
-    document.querySelectorAll('[role="article"]').forEach(attachPost);
-  }
-
-  const observer = new MutationObserver(() => scanPosts());
-  observer.observe(document.body, { childList: true, subtree: true });
-  scanPosts();
-
-  // ─── Trigger analysis ────────────────────────────────────────────────────
-  function triggerAnalysis(postEl) {
+  function sendPost(postEl) {
     const text = extractText(postEl);
     if (!text || text.length < 60) return;
 
     const author = extractAuthor(postEl);
-    const siteName = document.querySelector('meta[property="og:site_name"]')?.content || 'Facebook';
 
     chrome.runtime.sendMessage({
       type: 'POST_CLICKED',
       data: {
         text: text.substring(0, 4000),
         author,
-        pageTitle: document.title || '',
-        siteName,
-        pageUrl: window.location.href,
-        source: 'Facebook'
+        source: 'Facebook',
+        pageUrl: location.href
       }
     });
 
-    // Brief highlight so user sees which post was picked
+    // Brief highlight
     const prev = postEl.style.outline;
     postEl.style.outline = '2px solid #6366f1';
     postEl.style.outlineOffset = '3px';
     setTimeout(() => {
       postEl.style.outline = prev;
       postEl.style.outlineOffset = '';
-    }, 1200);
+    }, 1000);
   }
 
-  // ─── Extract clean text from post ────────────────────────────────────────
-  const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','INPUT','TEXTAREA','SELECT','BUTTON','SVG','CANVAS','VIDEO','AUDIO','IFRAME']);
+  // Scan for posts and attach
+  function scan() {
+    document.querySelectorAll('[role="article"]').forEach(attachPost);
+  }
 
-  function extractText(container) {
+  new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
+  scan();
+
+  // ── Text extraction ───────────────────────────────────────────────────────
+  const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','INPUT','TEXTAREA',
+                        'SELECT','BUTTON','SVG','CANVAS','VIDEO','AUDIO','IFRAME']);
+
+  function extractText(el) {
     const seen = new Set();
     const parts = [];
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         const p = node.parentElement;
-        if (!p) return NodeFilter.FILTER_REJECT;
-        if (SKIP.has(p.tagName)) return NodeFilter.FILTER_REJECT;
+        if (!p || SKIP.has(p.tagName)) return NodeFilter.FILTER_REJECT;
         const s = window.getComputedStyle(p);
         if (s.display === 'none' || s.visibility === 'hidden') return NodeFilter.FILTER_REJECT;
-        if (p.closest('button, [role="button"], nav, [role="navigation"], [aria-label*="action" i], [aria-label*="react" i], [aria-label*="comment" i], [aria-label*="share" i]')) {
+        if (p.closest('button,[role="button"],nav,[aria-label*="action" i],'
+          + '[aria-label*="react" i],[aria-label*="comment" i],[aria-label*="share" i]'))
           return NodeFilter.FILTER_REJECT;
-        }
         return NodeFilter.FILTER_ACCEPT;
       }
     });
@@ -83,9 +88,8 @@
     return parts.join(' ').replace(/\s+/g, ' ').trim();
   }
 
-  function extractAuthor(postEl) {
-    const el = postEl.querySelector('h2 a, h3 a, strong a, [data-hovercard-prefer-name-as-fallback="1"]');
-    return el ? el.textContent.trim().substring(0, 80) : '';
+  function extractAuthor(el) {
+    const a = el.querySelector('h2 a, h3 a, strong a, [data-hovercard-prefer-name-as-fallback="1"]');
+    return a ? a.textContent.trim().slice(0, 80) : '';
   }
-
 })();
